@@ -4,7 +4,11 @@ using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Linq;
 using AutoMapper;
+using AutoMapper.EntityFrameworkCore;
+using AutoMapper.EquivalencyExpression;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Newtonsoft.Json;
 
 namespace EntityFrameworkTest
@@ -69,16 +73,22 @@ namespace EntityFrameworkTest
     {
         private static void Main(string[] args)
         {
+            // Intialize the database context
+            var context = new EntityDbContext(x => x.UseInMemoryDatabase("Database"));
+
+            var serviceCollection = new ServiceCollection();
+
+            serviceCollection.AddSingleton(context);
+            
             // Initialize the AutoMapper
             var mapper = new MapperConfiguration(x =>
             {
                 x.AddProfile<ChildProfile>();
                 x.AddProfile<ParentProfile>();
+                x.AddCollectionMappers();
+                x.UseEntityFrameworkCoreModel<EntityDbContext>(serviceCollection);
             }).CreateMapper();
             
-            // Intialize the database context
-            var context = new EntityDbContext(x => x.UseInMemoryDatabase("Database"));
-
             // Create original instance
             var instance = new Parent
             {
@@ -92,7 +102,7 @@ namespace EntityFrameworkTest
             };
             
             // Add instance to DbContext
-            context.Parents.Add(instance);
+            context.Parents.Persist(mapper).InsertOrUpdate(instance);
 
             // Save changes
             context.SaveChanges();
@@ -112,15 +122,16 @@ namespace EntityFrameworkTest
             // Add the child to the API generated object
             updatedInstance.Children.Add(newChild);
 
-            // Beging tracking for changes to entity
-            context.Update(entity);
-
             // Apply changes from updatedInstance back to entity
-            mapper.Map(updatedInstance, entity);
+            // mapper.Map(updatedInstance, entity);
             
+            context.Parents.Persist(mapper).InsertOrUpdate(updatedInstance);
+
             // Save changed
             context.SaveChanges();
-
+            
+            entity = context.Parents.First();
+            
             Console.ReadKey();
         }
     }
